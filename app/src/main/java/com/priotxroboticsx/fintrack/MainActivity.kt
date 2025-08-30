@@ -1,9 +1,11 @@
+// File: MainActivity.kt
 package com.priotxroboticsx.fintrack
-
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -36,16 +38,25 @@ fun AppShell() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val navItems = listOf(
-        NavItem("Dashboard", Icons.Default.Dashboard, Routes.DASHBOARD),
+        NavItem("Home", Icons.Default.Home, Routes.DASHBOARD),
         NavItem("Accounts", Icons.Default.AccountBalanceWallet, Routes.ACCOUNTS),
-        NavItem("Add", Icons.Default.AddCircle, Routes.ADD_TRANSACTION),
         NavItem("Reports", Icons.Default.Assessment, Routes.REPORTS),
         NavItem("Settings", Icons.Default.Settings, Routes.SETTINGS)
     )
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = { AppBottomNavBar(navController, navItems) }
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { navController.navigate(Routes.ADD_TRANSACTION) },
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Transaction", tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        },
+        floatingActionButtonPosition = FabPosition.Center,
+        bottomBar = { AppBottomBar(navController, navItems) }
     ) { innerPadding ->
         NavHost(
             navController = navController,
@@ -56,7 +67,7 @@ fun AppShell() {
             composable(Routes.ACCOUNTS) { AccountsScreen() }
             composable(Routes.ADD_TRANSACTION) {
                 AddTransactionScreen(onTransactionAdded = {
-                    navController.navigate(Routes.DASHBOARD) { popUpTo(Routes.DASHBOARD) { inclusive = true } }
+                    navController.popBackStack()
                 })
             }
             composable(Routes.REPORTS) { ReportsScreen() }
@@ -72,26 +83,37 @@ fun AppShell() {
 }
 
 @Composable
-fun AppBottomNavBar(navController: NavController, items: List<NavItem>) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface
-    ) {
-        val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
-        items.forEach { item ->
-            NavigationBarItem(
-                icon = { Icon(item.icon, contentDescription = item.label) },
-                label = { Text(item.label) },
-                selected = currentRoute == item.route,
-                onClick = {
-                    if (currentRoute != item.route) {
-                        navController.navigate(item.route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+fun AppBottomBar(navController: NavController, items: List<NavItem>) {
+    BottomAppBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        actions = {
+            val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+            val middleIndex = items.size / 2
+
+            items.forEachIndexed { index, item ->
+                if (index == middleIndex) {
+                    // This is where the FAB sits, so we leave a gap.
+                    Spacer(Modifier.weight(1f))
+                }
+
+                val selected = currentRoute == item.route
+                val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+
+                IconButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (!selected) {
+                            navController.navigate(item.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     }
+                ) {
+                    Icon(item.icon, contentDescription = item.label, tint = color)
                 }
-            )
+            }
         }
-    }
+    )
 }
