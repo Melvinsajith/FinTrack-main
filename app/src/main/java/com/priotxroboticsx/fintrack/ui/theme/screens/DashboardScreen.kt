@@ -1,6 +1,7 @@
 package com.priotxroboticsx.fintrack.ui.theme.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,8 +19,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.priotxroboticsx.fintrack.data.Account
 import com.priotxroboticsx.fintrack.data.Transaction
+import com.priotxroboticsx.fintrack.ui.Routes
 import com.priotxroboticsx.fintrack.ui.theme.Green
 import com.priotxroboticsx.fintrack.ui.theme.LightGray
 import com.priotxroboticsx.fintrack.ui.theme.Red
@@ -29,23 +32,37 @@ import com.priotxroboticsx.fintrack.viewmodel.TransactionViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class) // Opt-in for experimental APIs like DateRangePicker
 @Composable
-fun DashboardScreen() {
+fun DashboardScreen(navController: NavController) {
     val accountViewModel: AccountViewModel = viewModel()
     val transactionViewModel: TransactionViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
 
     val accounts by accountViewModel.allAccounts.collectAsState()
-    val transactions by transactionViewModel.allTransactions.collectAsState()
+    val allTransactions by transactionViewModel.allTransactions.collectAsState()
     val user by settingsViewModel.user.collectAsState()
+
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+
+    val filteredTransactions = remember(allTransactions, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
+        if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
+            allTransactions
+        } else {
+            allTransactions.filter {
+                it.date.time in dateRangePickerState.selectedStartDateMillis!!..dateRangePickerState.selectedEndDateMillis!!
+            }
+        }
+    }
 
     val mainCurrency = accounts.firstOrNull()?.currency ?: "USD"
     val totalBalance = accounts.sumOf { it.balance }
-    val totalIncome = transactions.filter { it.type == "Income" }.sumOf { it.amount }
-    val totalExpenses = transactions.filter { it.type == "Expense" }.sumOf { it.amount }
+    val totalIncome = filteredTransactions.filter { it.type == "Income" }.sumOf { it.amount }
+    val totalExpenses = filteredTransactions.filter { it.type == "Expense" }.sumOf { it.amount }
     val cashflow = totalIncome - totalExpenses
 
-    val groupedTransactions = transactions.groupBy {
+    val groupedTransactions = filteredTransactions.groupBy {
         SimpleDateFormat("MMMM dd.", Locale.getDefault()).format(it.date)
     }
 
@@ -54,11 +71,22 @@ fun DashboardScreen() {
         contentPadding = PaddingValues(16.dp)
     ) {
         item {
-            DashboardHeader(user?.name)
+            DashboardHeader(
+                userName = user?.name,
+                dateRangeState = dateRangePickerState,
+                onDateRangeClick = { showDateRangePicker = true }
+            )
             Spacer(Modifier.height(24.dp))
             TotalBalanceDisplay(totalBalance, mainCurrency)
             Spacer(Modifier.height(16.dp))
-            IncomeExpenseSummary(totalIncome, totalExpenses, cashflow, mainCurrency)
+            IncomeExpenseSummary(
+                income = totalIncome,
+                expense = totalExpenses,
+                cashflow = cashflow,
+                currency = mainCurrency,
+                onIncomeClick = { navController.navigate("${Routes.REPORTS}?${Routes.REPORTS_ARG_TYPE}=Income") },
+                onExpenseClick = { navController.navigate("${Routes.REPORTS}?${Routes.REPORTS_ARG_TYPE}=Expense") }
+            )
             Spacer(Modifier.height(24.dp))
         }
 
@@ -76,10 +104,33 @@ fun DashboardScreen() {
             }
         }
     }
+
+    if (showDateRangePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                TextButton(onClick = { showDateRangePicker = false }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDateRangePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DateRangePicker(state = dateRangePickerState)
+        }
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardHeader(userName: String?) {
+fun DashboardHeader(userName: String?, dateRangeState: DateRangePickerState, onDateRangeClick: () -> Unit) {
+    val formatter = SimpleDateFormat("MMM d", Locale.getDefault())
+    val startDate = dateRangeState.selectedStartDateMillis?.let { formatter.format(Date(it)) } ?: "Start"
+    val endDate = dateRangeState.selectedEndDateMillis?.let { formatter.format(Date(it)) } ?: "End"
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -91,11 +142,12 @@ fun DashboardHeader(userName: String?) {
             modifier = Modifier
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surface)
+                .clickable(onClick = onDateRangeClick)
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Icon(Icons.Default.CalendarToday, contentDescription = "Date Range", modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Jan 1 - Aug 30", style = MaterialTheme.typography.bodySmall)
+            Text("$startDate - $endDate", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -110,7 +162,14 @@ fun TotalBalanceDisplay(balance: Double, currency: String) {
 }
 
 @Composable
-fun IncomeExpenseSummary(income: Double, expense: Double, cashflow: Double, currency: String) {
+fun IncomeExpenseSummary(
+    income: Double,
+    expense: Double,
+    cashflow: Double,
+    currency: String,
+    onIncomeClick: () -> Unit,
+    onExpenseClick: () -> Unit
+) {
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SummaryBox(
@@ -119,7 +178,8 @@ fun IncomeExpenseSummary(income: Double, expense: Double, cashflow: Double, curr
                 currency = currency,
                 color = Green,
                 icon = Icons.Default.ArrowDownward,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onIncomeClick
             )
             SummaryBox(
                 title = "Expenses",
@@ -127,7 +187,8 @@ fun IncomeExpenseSummary(income: Double, expense: Double, cashflow: Double, curr
                 currency = currency,
                 color = MaterialTheme.colorScheme.onSurface,
                 icon = Icons.Default.ArrowUpward,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onExpenseClick
             )
         }
         Spacer(Modifier.height(12.dp))
@@ -140,9 +201,17 @@ fun IncomeExpenseSummary(income: Double, expense: Double, cashflow: Double, curr
 }
 
 @Composable
-fun SummaryBox(title: String, amount: Double, currency: String, color: Color, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
+fun SummaryBox(
+    title: String,
+    amount: Double,
+    currency: String,
+    color: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Card(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = if (title == "Income") color else LightGray)
     ) {
