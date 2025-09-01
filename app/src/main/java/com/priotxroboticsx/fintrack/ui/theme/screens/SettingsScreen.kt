@@ -16,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -43,19 +42,41 @@ fun SettingsScreen(
     val accounts by accountViewModel.allAccounts.collectAsState()
     var showEditNameDialog by remember { mutableStateOf(false) }
 
+    // --- NEW: State for date range selection ---
+    val initialDate = Calendar.getInstance()
+    var startDate by remember { mutableStateOf(initialDate.clone() as Calendar) }
+    var endDate by remember { mutableStateOf(initialDate.clone() as Calendar) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // --- NEW: Filter transactions based on the selected date range ---
+    val filteredTransactions = remember(transactions, startDate, endDate) {
+        val startCal = (startDate.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+        }
+        val endCal = (endDate.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
+        }
+        transactions.filter {
+            val transactionCal = Calendar.getInstance().apply { time = it.date }
+            !transactionCal.before(startCal) && !transactionCal.after(endCal)
+        }
+    }
+
     val context = LocalContext.current
     val csvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         uri?.let {
-            exportToCsv(context, it, transactions, accounts, showSnackbar)
+            exportToCsv(context, it, filteredTransactions, accounts, showSnackbar)
         }
     }
     val pdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         uri?.let {
-            exportToPdf(context, it, transactions, accounts, showSnackbar)
+            exportToPdf(context, it, filteredTransactions, accounts, showSnackbar)
         }
     }
 
@@ -67,6 +88,19 @@ fun SettingsScreen(
                 settingsViewModel.updateUserName(newName)
                 showSnackbar("Name Updated!")
                 showEditNameDialog = false
+            }
+        )
+    }
+
+    if (showDatePicker) {
+        MonthYearRangePickerDialog(
+            initialStartDate = startDate,
+            initialEndDate = endDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = { newStart, newEnd ->
+                startDate = newStart
+                endDate = newEnd
+                showDatePicker = false
             }
         )
     }
@@ -110,17 +144,36 @@ fun SettingsScreen(
         item {
             SettingsSection("IMPORT & EXPORT") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val formatter = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+                    SettingsRow(
+                        icon = Icons.Default.CalendarToday,
+                        title = "Export Date Range",
+                        subtitle = "${formatter.format(startDate.time)} - ${formatter.format(endDate.time)}",
+                        onClick = { showDatePicker = true }
+                    )
                     SettingsRow(
                         icon = Icons.Default.Download,
                         title = "Export to CSV",
                         subtitle = "Export transactions to a CSV file",
-                        onClick = { csvLauncher.launch("fintrack_export.csv") }
+                        onClick = {
+                            if (filteredTransactions.isNotEmpty()) {
+                                csvLauncher.launch("fintrack_export_${System.currentTimeMillis()}.csv")
+                            } else {
+                                showSnackbar("No transactions in selected period")
+                            }
+                        }
                     )
                     SettingsRow(
                         icon = Icons.Default.PictureAsPdf,
                         title = "Export to PDF",
                         subtitle = "Save a PDF report of your transactions",
-                        onClick = { pdfLauncher.launch("fintrack_report.pdf") }
+                        onClick = {
+                            if (filteredTransactions.isNotEmpty()) {
+                                pdfLauncher.launch("fintrack_report_${System.currentTimeMillis()}.pdf")
+                            } else {
+                                showSnackbar("No transactions in selected period")
+                            }
+                        }
                     )
                     SettingsRow(icon = Icons.Default.Backup, title = "Backup data", onClick = { /* TODO */ })
                 }
@@ -128,6 +181,7 @@ fun SettingsScreen(
         }
     }
 }
+
 
 @Composable
 fun EditUserNameDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
@@ -269,10 +323,6 @@ private fun exportToPdf(
 
         if (yPosition > 800f) { // Simple pagination
             pdfDocument.finishPage(page)
-            // val newPage = pdfDocument.startPage(pageInfo)
-            // canvas = newPage.canvas
-            // yPosition = 40f
-            // We'll stop here for simplicity, a full implementation would create a new page
             return@forEach
         }
     }
@@ -291,3 +341,4 @@ private fun exportToPdf(
         pdfDocument.close()
     }
 }
+

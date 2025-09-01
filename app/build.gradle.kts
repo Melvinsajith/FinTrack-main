@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp") version "2.0.0-1.0.21"
     id("org.jetbrains.kotlin.plugin.compose")
+    // Corrected the plugin id and added the version
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0"
 }
 
 android {
@@ -67,4 +69,8 @@ dependencies {
 
     // Charts - Using a simple Compose-based library
     implementation("co.yml:ycharts:2.1.0")
+
+    // Kotlinx Serialization for JSON backup/restore
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 }
+
