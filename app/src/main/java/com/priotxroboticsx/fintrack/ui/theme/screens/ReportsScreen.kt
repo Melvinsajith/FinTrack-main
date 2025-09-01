@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,37 +26,57 @@ import co.yml.charts.ui.piechart.models.PieChartConfig
 import co.yml.charts.ui.piechart.models.PieChartData
 import com.priotxroboticsx.fintrack.data.Transaction
 import com.priotxroboticsx.fintrack.viewmodel.TransactionViewModel
+import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
 
 @Composable
 fun ReportsScreen(
     defaultTab: String,
+    onClose: () -> Unit,
     transactionViewModel: TransactionViewModel = viewModel()
 ) {
     val allTransactions by transactionViewModel.allTransactions.collectAsState()
     val tabs = listOf("Expenses", "Income")
     var tabIndex by remember { mutableStateOf(if (defaultTab == "Income") 1 else 0) }
 
-    val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-    var selectedYear by remember { mutableStateOf(currentYear) }
-    var selectedMonth by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MONTH)) }
+    // --- CHANGE: Use a start and end date for filtering ---
+    val initialDate = Calendar.getInstance()
+    var startDate by remember { mutableStateOf(initialDate.clone() as Calendar) }
+    var endDate by remember { mutableStateOf(initialDate.clone() as Calendar) }
 
     val filteredTransactions = allTransactions.filter {
-        val cal = Calendar.getInstance().apply { time = it.date }
-        cal.get(Calendar.YEAR) == selectedYear && cal.get(Calendar.MONTH) == selectedMonth
+        val transactionCal = Calendar.getInstance().apply { time = it.date }
+
+        // Normalize start date to the beginning of the selected month
+        val startCal = (startDate.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }
+
+        // Normalize end date to the end of the selected month
+        val endCal = (endDate.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+        }
+
+        !transactionCal.before(startCal) && !transactionCal.after(endCal)
     }
 
     Scaffold(
         topBar = {
             ReportTopBar(
-                selectedMonth = selectedMonth,
-                selectedYear = selectedYear,
-                onDateChange = { year, month ->
-                    selectedYear = year
-                    selectedMonth = month
+                startDate = startDate,
+                endDate = endDate,
+                onDateChange = { newStart, newEnd ->
+                    startDate = newStart
+                    endDate = newEnd
                 },
-                onAddClick = { /* TODO */ }
+                onCloseClick = onClose
             )
         }
     ) { padding ->
@@ -78,58 +100,149 @@ fun ReportsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Opt-in for experimental APIs
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportTopBar(
-    selectedMonth: Int,
-    selectedYear: Int,
-    onDateChange: (Int, Int) -> Unit,
-    onAddClick: () -> Unit
+    startDate: Calendar,
+    endDate: Calendar,
+    onDateChange: (Calendar, Calendar) -> Unit,
+    onCloseClick: () -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val months = (0..11).map {
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.MONTH, it)
-        cal.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())!!
-    }
+    val formatter = SimpleDateFormat("MMM yyyy", Locale.getDefault())
 
     TopAppBar(
         title = { },
         navigationIcon = {
-            IconButton(onClick = { /* TODO: Handle back navigation */ }) {
+            IconButton(onClick = onCloseClick) {
                 Icon(Icons.Default.Close, contentDescription = "Close")
             }
         },
         actions = {
             Button(onClick = { showDatePicker = true }) {
-                Icon(Icons.Default.CalendarToday, contentDescription = "Select Month", modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.CalendarToday, contentDescription = "Select Date Range", modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("${months[selectedMonth]} $selectedYear")
-            }
-            IconButton(onClick = onAddClick) {
-                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                Text("${formatter.format(startDate.time)} - ${formatter.format(endDate.time)}")
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
     )
 
     if(showDatePicker) {
-        // A simple dialog to select month and year
-        AlertDialog(
-            onDismissRequest = { showDatePicker = false },
-            title = { Text("Select Month and Year") },
-            text = {
-                // In a real app, you would use a proper date picker library for this
-                Text("Date picker placeholder")
-            },
-            confirmButton = {
-                Button(onClick = { showDatePicker = false}) {
-                    Text("OK")
-                }
+        MonthYearRangePickerDialog(
+            initialStartDate = startDate,
+            initialEndDate = endDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = { newStart, newEnd ->
+                onDateChange(newStart, newEnd)
+                showDatePicker = false
             }
         )
     }
 }
+
+@Composable
+fun MonthYearRangePickerDialog(
+    initialStartDate: Calendar,
+    initialEndDate: Calendar,
+    onDismiss: () -> Unit,
+    onConfirm: (startDate: Calendar, endDate: Calendar) -> Unit
+) {
+    var startYear by remember { mutableStateOf(initialStartDate.get(Calendar.YEAR)) }
+    var startMonth by remember { mutableStateOf(initialStartDate.get(Calendar.MONTH)) }
+    var endYear by remember { mutableStateOf(initialEndDate.get(Calendar.YEAR)) }
+    var endMonth by remember { mutableStateOf(initialEndDate.get(Calendar.MONTH)) }
+
+    val months = (0..11).map {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.MONTH, it)
+        cal.getDisplayName(Calendar.MONTH, Calendar.SHORT, Locale.getDefault())!!
+    }
+
+    // Ensures the end date is always on or after the start date
+    LaunchedEffect(startYear, startMonth) {
+        val startCal = Calendar.getInstance().apply { set(startYear, startMonth, 1) }
+        val endCal = Calendar.getInstance().apply { set(endYear, endMonth, 1) }
+        if (startCal.after(endCal)) {
+            endYear = startYear
+            endMonth = startMonth
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Date Range") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                // Start Date Picker
+                Column {
+                    Text("Start Date", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    DateSelector(year = startYear, month = startMonth, months = months,
+                        onYearChange = { startYear = it },
+                        onMonthChange = { startMonth = it }
+                    )
+                }
+
+                // End Date Picker
+                Column {
+                    Text("End Date", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    DateSelector(year = endYear, month = endMonth, months = months,
+                        onYearChange = { endYear = it },
+                        onMonthChange = { endMonth = it },
+                        minDate = Calendar.getInstance().apply { set(startYear, startMonth, 1) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val finalStart = Calendar.getInstance().apply { set(startYear, startMonth, 1) }
+                val finalEnd = Calendar.getInstance().apply { set(endYear, endMonth, 1) }
+                onConfirm(finalStart, finalEnd)
+            }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun DateSelector(
+    year: Int,
+    month: Int,
+    months: List<String>,
+    onYearChange: (Int) -> Unit,
+    onMonthChange: (Int) -> Unit,
+    minDate: Calendar? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Year Selector
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = { onYearChange(year - 1) },
+                enabled = minDate == null || (year - 1) >= minDate.get(Calendar.YEAR)
+            ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Year") }
+            Text(year.toString(), style = MaterialTheme.typography.bodyLarge)
+            IconButton(onClick = { onYearChange(year + 1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Year") }
+        }
+
+        // Month Selector
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = { onMonthChange((month - 1 + 12) % 12) },
+                enabled = minDate == null || year > minDate.get(Calendar.YEAR) || (year == minDate.get(Calendar.YEAR) && month > minDate.get(Calendar.MONTH))
+            ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Month") }
+            Text(months[month], style = MaterialTheme.typography.bodyLarge)
+            IconButton(onClick = { onMonthChange((month + 1) % 12) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Month") }
+        }
+    }
+}
+
 
 @Composable
 fun ReportContent(reportType: String, transactions: List<Transaction>) {
@@ -138,16 +251,15 @@ fun ReportContent(reportType: String, transactions: List<Transaction>) {
         .groupBy { it.category }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
 
-    // --- IMPROVEMENT: Create a stable map of colors for each category ---
     val categoryColors = remember(groupedData) {
         groupedData.keys.associateWith { randomColor() }
     }
 
     val pieSlices = groupedData.map { (category, sum) ->
         PieChartData.Slice(
-            category,
-            sum.toFloat(),
-            categoryColors[category] ?: Color.Gray // Use the stable color
+            label = category,
+            value = sum.toFloat(),
+            color = (categoryColors[category] ?: Color.Gray).copy(alpha = 0.8f)
         )
     }
 
@@ -165,22 +277,28 @@ fun ReportContent(reportType: String, transactions: List<Transaction>) {
         }
         item {
             if (pieSlices.isNotEmpty()) {
-                PieChart(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(250.dp),
-                    pieChartData = PieChartData(slices = pieSlices, plotType = PlotType.Donut),
-                    pieChartConfig = PieChartConfig(
-                        isAnimationEnable = true,
-                        showSliceLabels = false,
-                        backgroundColor = MaterialTheme.colorScheme.background
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    PieChart(
+                        modifier = Modifier.size(200.dp),
+                        pieChartData = PieChartData(slices = pieSlices, plotType = PlotType.Pie),
+                        pieChartConfig = PieChartConfig(
+                            isAnimationEnable = true,
+                            showSliceLabels = true,
+                            sliceLabelTextSize = 12.sp,
+                            sliceLabelTextColor = MaterialTheme.colorScheme.onSurface,
+                            backgroundColor = MaterialTheme.colorScheme.background
+                        )
                     )
-                )
+                }
                 Spacer(Modifier.height(24.dp))
             } else {
-                Box(modifier = Modifier
-                    .fillMaxWidth()
-                    .height(250.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp), contentAlignment = Alignment.Center) {
                     Text("No data for this period.")
                 }
             }
@@ -191,7 +309,7 @@ fun ReportContent(reportType: String, transactions: List<Transaction>) {
                 category = category,
                 amount = sum,
                 percentage = if (total > 0) (sum / total * 100) else 0.0,
-                color = categoryColors[category] ?: Color.Gray // Use the same stable color
+                color = categoryColors[category] ?: Color.Gray
             )
             Spacer(Modifier.height(8.dp))
         }

@@ -19,10 +19,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
-import androidx.navigation.navArgument // Correct import added
+import androidx.navigation.navArgument // Add this import
 import com.priotxroboticsx.fintrack.ui.Routes
 import com.priotxroboticsx.fintrack.ui.theme.FinTrackTheme
-import com.priotxroboticsx.fintrack.ui.theme.screens.*
+import com.priotxroboticsx.fintrack.ui.theme.screens.AccountsScreen
+import com.priotxroboticsx.fintrack.ui.theme.screens.AddTransactionScreen
+import com.priotxroboticsx.fintrack.ui.theme.screens.DashboardScreen
+import com.priotxroboticsx.fintrack.ui.theme.screens.ReportsScreen
+import com.priotxroboticsx.fintrack.ui.theme.screens.SettingsScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -76,9 +80,9 @@ fun AppShell() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Routes.DASHBOARD) { DashboardScreen(navController = navController) }
-            composable(Routes.ACCOUNTS) { AccountsScreen() } // Assuming AccountsScreen exists
+            composable(Routes.ACCOUNTS) { AccountsScreen() }
             composable(Routes.ADD_TRANSACTION) {
-                AddTransactionScreen(onTransactionAdded = { // Assuming AddTransactionScreen exists
+                AddTransactionScreen(onTransactionAdded = {
                     navController.popBackStack()
                 })
             }
@@ -90,11 +94,12 @@ fun AppShell() {
                 })
             ) { backStackEntry ->
                 ReportsScreen(
-                    defaultTab = backStackEntry.arguments?.getString(Routes.REPORTS_ARG_TYPE) ?: "Expenses"
+                    defaultTab = backStackEntry.arguments?.getString(Routes.REPORTS_ARG_TYPE) ?: "Expenses",
+                    onClose = { navController.popBackStack() }
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(showSnackbar = { message -> // Assuming SettingsScreen exists
+                SettingsScreen(showSnackbar = { message ->
                     scope.launch {
                         snackbarHostState.showSnackbar(message = message)
                     }
@@ -145,3 +150,6 @@ fun AppBottomBar(navController: NavController, items: List<NavItem>, modifier: M
         }
     }
 }
+
+
+

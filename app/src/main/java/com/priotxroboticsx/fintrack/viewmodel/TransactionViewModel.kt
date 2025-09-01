@@ -48,4 +48,38 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
+
+    fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
+        // First, revert the balance changes, then delete the transaction record
+        updateBalancesForDeletedTransaction(transaction)
+        transactionDao.delete(transaction)
+    }
+
+    private suspend fun updateBalancesForDeletedTransaction(transaction: Transaction) {
+        when (transaction.type) {
+            "Income" -> { // Revert income by subtracting the amount
+                accountDao.getAccount(transaction.accountId).firstOrNull()?.let { account ->
+                    accountDao.update(account.copy(balance = account.balance - transaction.amount))
+                }
+            }
+            "Expense" -> { // Revert expense by adding the amount back
+                accountDao.getAccount(transaction.accountId).firstOrNull()?.let { account ->
+                    accountDao.update(account.copy(balance = account.balance + transaction.amount))
+                }
+            }
+            "Transfer" -> { // Revert transfer by moving money back
+                // Add money back to the 'from' account
+                accountDao.getAccount(transaction.accountId).firstOrNull()?.let { fromAccount ->
+                    accountDao.update(fromAccount.copy(balance = fromAccount.balance + transaction.amount))
+                }
+                // Subtract money from the 'to' account
+                transaction.toAccountId?.let {
+                    accountDao.getAccount(it).firstOrNull()?.let { toAccount ->
+                        accountDao.update(toAccount.copy(balance = toAccount.balance - transaction.amount))
+                    }
+                }
+            }
+        }
+    }
 }
+

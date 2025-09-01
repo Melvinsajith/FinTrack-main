@@ -46,6 +46,9 @@ fun DashboardScreen(navController: NavController) {
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
+    // State to hold the transaction tapped for deletion
+    var transactionToDelete by remember { mutableStateOf<Transaction?>(null) }
+
     val filteredTransactions = remember(allTransactions, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
         if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
             allTransactions
@@ -99,7 +102,11 @@ fun DashboardScreen(navController: NavController) {
                 )
             }
             items(transactionsOnDate) { transaction ->
-                DashboardTransactionItem(transaction, accounts)
+                DashboardTransactionItem(
+                    transaction = transaction,
+                    accounts = accounts,
+                    onClick = { transactionToDelete = transaction } // Set the transaction to delete on click
+                )
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -121,6 +128,33 @@ fun DashboardScreen(navController: NavController) {
         ) {
             DateRangePicker(state = dateRangePickerState)
         }
+    }
+
+    // Confirmation dialog for deleting a transaction
+    if (transactionToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { transactionToDelete = null },
+            title = { Text("Delete Transaction") },
+            text = { Text("Are you sure you want to delete this transaction? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        transactionToDelete?.let {
+                            transactionViewModel.deleteTransaction(it)
+                        }
+                        transactionToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { transactionToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -232,13 +266,19 @@ fun SummaryBox(
 }
 
 @Composable
-fun DashboardTransactionItem(transaction: Transaction, accounts: List<Account>) {
+fun DashboardTransactionItem(
+    transaction: Transaction,
+    accounts: List<Account>,
+    onClick: () -> Unit
+) {
     val account = accounts.find { it.id == transaction.accountId }
     val icon = if (transaction.type == "Income") Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
     val color = if (transaction.type == "Income") Green else Red
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick), // Make the entire card clickable
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
@@ -283,3 +323,4 @@ fun Tag(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = n
         Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
     }
 }
+
